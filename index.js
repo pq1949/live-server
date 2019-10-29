@@ -9,6 +9,8 @@ var fs = require('fs'),
 	http = require('http'),
 	send = require('send'),
 	open = require('opn'),
+	sink = require('stream-sink'),
+	marked = require('marked'),
 	es = require("event-stream"),
 	os = require('os'),
 	chokidar = require('chokidar');
@@ -20,6 +22,13 @@ var LiveServer = {
 	server: null,
 	watcher: null,
 	logLevel: 2
+};
+
+var markdownStyles = {
+	'html': 'standard',
+	'hack': 'hack',
+	'hack-dark': 'hack dark',
+	'hack-light': 'hack'
 };
 
 function escape(html){
@@ -44,6 +53,7 @@ function staticServer(root) {
 		var hasNoOrigin = !req.headers.origin;
 		var injectCandidates = [ new RegExp("</body>", "i"), new RegExp("</svg>"), new RegExp("</head>", "i")];
 		var injectTag = null;
+		var injectMarkdown = false;
 
 		function directory() {
 			var pathname = url.parse(req.originalUrl).pathname;
@@ -70,6 +80,10 @@ function staticServer(root) {
 						"Couldn't find any of the tags ", injectCandidates, "from", filepath);
 				}
 			}
+
+			if(LiveServer.markdownStyle && x === '.md') {
+				injectMarkdown = true;
+			}
 		}
 
 		function error(err) {
@@ -85,6 +99,22 @@ function staticServer(root) {
 				var originalPipe = stream.pipe;
 				stream.pipe = function(resp) {
 					originalPipe.call(stream, es.replace(new RegExp(injectTag, "i"), INJECTED_CODE + injectTag)).pipe(resp);
+				};
+			}
+			if(injectMarkdown) {
+				res.setHeader('Content-Type', 'text/html');
+				res.removeHeader('Content-Length');
+				// TODO: Modify the length given to the browser
+				var originalPipe = stream.pipe;
+				stream.pipe = function(res) {
+					originalPipe.call(stream, sink().on('data', function(md) {
+						var content = marked(md);
+						var html = fs.readFileSync(__dirname + '/markdown.html').toString();
+						html = html.replace('%content%', content);
+						html = html.replace('%class%', markdownStyles[LiveServer.markdownStyle]);
+						res.write(html);
+						res.end();
+					}))
 				};
 			}
 		}
@@ -163,6 +193,7 @@ LiveServer.start = function(options) {
 	} else {
 		httpsModule = "https";
 	}
+	LiveServer.markdownStyle = options.markdown;
 
 	// Setup a web server
 	var app = connect();
@@ -397,3 +428,4 @@ LiveServer.shutdown = function() {
 };
 
 module.exports = LiveServer;
+module.exports.markdownStyles = markdownStyles;
