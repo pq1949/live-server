@@ -7,7 +7,7 @@ var liveServer = require("./index");
 var opts = {
 	host: process.env.IP,
 	port: process.env.PORT,
-	open: true,
+	open: false,
 	markdown: 'html',
 	mount: [],
 	proxy: [],
